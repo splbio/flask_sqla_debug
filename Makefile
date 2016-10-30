@@ -8,3 +8,6 @@ test:
 
 dep-test:
 	pip install -r requirements-devel.txt
+
+lint:
+	flake8
