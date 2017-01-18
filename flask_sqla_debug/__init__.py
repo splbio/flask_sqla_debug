@@ -148,6 +148,11 @@ class FlaskSqlaDebug(object):
         """
         g["stack_dump_count"] = 0
         g["stack_dump_request_count"] = 0
+
+        if config.get("sqla_debug_disabled"):
+            g["sqla_debug_disabled"] = True
+        else:
+            g["sqla_debug_disabled"] = False
         return g
 
     def _before_request_handler(self):
@@ -163,8 +168,9 @@ class FlaskSqlaDebug(object):
             exceeded_str = " (exceeded max)"
 
         self.log.debug(
-            "Total time: %0.3f, query_count: %d %s, stacks_dumped: %d, stacks_requested %d",
-            total_time, g["sql_query_count"], exceeded_str, g["stack_dump_count"], g["stack_dump_request_count"]
+            "Response code: %s, total time: %0.3f, query_count: %d %s, stacks_dumped: %d, stacks_requested %d",
+            str(response.status), total_time, g["sql_query_count"], exceeded_str, g["stack_dump_count"], g["stack_dump_request_count"],
+            extra=self.config.get("FLASK_SQLA_DEBUG_LOG_EXTRA", {})
         )
         return response
 
@@ -176,6 +182,8 @@ class FlaskSqlaDebug(object):
         """
         g = self._get_g()
         config = self.config
+        if g['sqla_debug_disabled']:
+            return
         if g is not None:
             g["stack_dump_request_count"] += 1
             if g["stack_dump_count"] > config.get('FLASK_SQLA_DEBUG_MAX_REQUEST_DEBUG_STACKS', 3):
@@ -197,8 +205,10 @@ class FlaskSqlaDebug(object):
             raise FlaskSqlaDebugException(s)
         a = ["url: " + request.url + "\n"]
         a.extend(args)
-        a.append("".join(traceback.format_stack()))
-        self.log.error("%s\n" + fmt + ": stack trace: %s", *a)
+
+        extra = config.get("FLASK_SQLA_DEBUG_LOG_EXTRA", {})
+        extra['trace'] = traceback.format_stack()
+        self.log.error("%s\n" + fmt, *a, extra=extra)
 
     def query_dump_start(self):
         """Start logging queries."""
@@ -220,7 +230,7 @@ class FlaskSqlaDebug(object):
         g["query_start_time"] = self.before_cursor_execute_time()
         # If not dumping queries, we are done here.
         if g["dump_queries"] > 0:
-            self.log.debug("Executing query: %s, params: %s", statement, parameters)
+            self.log.debug("Executing query: %s, params: %s", statement, parameters, extra=self.config.get("FLASK_SQLA_DEBUG_LOG_EXTRA", {}))
 
     def _after_cursor_execute(self, conn, cursor, statement,
                               parameters, context, executemany):
@@ -236,6 +246,8 @@ class FlaskSqlaDebug(object):
         g = self._get_g()
         if g is None:
             return
+        if g['sqla_debug_disabled']:
+            return
 
         time_taken = self.after_cursor_execute_time() - g["query_start_time"]
 
@@ -249,12 +261,13 @@ class FlaskSqlaDebug(object):
         if g["sql_total_query_time"] > g["sql_max_total_query_seconds"]:
             if not g["sql_total_query_time_exceeded"]:
                 g["sql_total_query_time_exceeded"] = True
-                self.maybe_dump_stack("Total query time exceeded for multiple queries, last query: %s, params %s", statement, parameters)
+                self.maybe_dump_stack("Total query time %0.3f seconds exceeded for multiple queries, last query: %s, params %s",
+                                      g["sql_total_query_time"], statement, parameters)
                 logged = True
 
         # Make sure we haven't exceeded the time for a SINGLE sql
         if not logged and g["sql_max_single_query_seconds"] < time_taken:
-            self.maybe_dump_stack("Total query time exceeded for multiple queries, last query: %s, params %s", statement, parameters)
+            self.maybe_dump_stack("Total query time %0.3f seconds exceeded for multiple queries, last query: %s, params %s", time_taken, statement, parameters)
             logged = True
 
         # Did we exceed the max queries we should be doing?
@@ -263,7 +276,7 @@ class FlaskSqlaDebug(object):
             logged = True
 
         if g["dump_queries"] > 0:
-            self.log.debug("Query finished in {} seconds.".format(time_taken))
+            self.log.debug("Query finished in {} seconds.".format(time_taken), extra=self.config.get("FLASK_SQLA_DEBUG_LOG_EXTRA", {}))
 
 
 FlaskSqlaDebug._make_g_accessor("sql_max_query_count", "Max sql queries per request")
