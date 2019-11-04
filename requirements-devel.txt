@@ -11,7 +11,7 @@ pydocstyle==1.1.1
 pyflakes==1.2.3
 pytest==3.0.3
 ## The following requirements were added by pip --freeze:
-Flask==0.11.1
+Flask==1.0
 Flask-SQLAlchemy==2.1
 Jinja2==2.8
 MarkupSafe==0.23
